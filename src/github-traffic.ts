@@ -120,7 +120,7 @@ function buildEmailHtml(
     <table border="1" cellpadding="4" cellspacing="0"><tr><th>Referrer</th><th>Count</th><th>Unique</th></tr>${referrerRows || "<tr><td colspan=3>none</td></tr>"}</table>
     <h3>Top paths (14-day window)</h3>
     <table border="1" cellpadding="4" cellspacing="0"><tr><th>Path</th><th>Count</th><th>Unique</th></tr>${pathRows || "<tr><td colspan=3>none</td></tr>"}</table>
-    <p style="color:#888;font-size:12px;">GitHub only exposes these as aggregate daily counts \\u2014 there's no per-clone identity to report, cloning a public repo is anonymous.</p>
+    <p style="color:#888;font-size:12px;">GitHub only exposes these as aggregate daily counts — there's no per-clone identity to report, cloning a public repo is anonymous.</p>
   `;
 }
 

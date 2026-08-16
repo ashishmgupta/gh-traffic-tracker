@@ -16,7 +16,7 @@ export const DASHBOARD_HTML = `<!doctype html>
     --gridline: #2a2620;
     --accent: #35c235;
     /* Two chart series colors, chosen for both hue AND lightness separation
-       (blue: lighter/cool, amber: darker/warm) rather than hue alone \\u2014
+       (blue: lighter/cool, amber: darker/warm) rather than hue alone —
        the color-vision-safe validator script wasn't available in this
        environment to confirm the usual way, so this is a manual, more
        conservative substitute, not a substitute for actually running it. */
@@ -141,7 +141,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
   <div id="app">
     <h1>gh-traffic-tracker</h1>
-    <p class="subtitle">Clone and view history GitHub itself only keeps for 14 days \\u2014 stored permanently here.</p>
+    <p class="subtitle">Clone and view history GitHub itself only keeps for 14 days — stored permanently here.</p>
 
     <div class="toolbar">
       <select id="repo-select"></select>
@@ -150,7 +150,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       <span class="status" id="toolbar-status"></span>
     </div>
 
-    <div id="loading">Loading\\u2026</div>
+    <div id="loading">Loading…</div>
     <div id="error-banner" style="display:none; color:#e66767;"></div>
 
     <div id="content" style="display:none">
@@ -327,9 +327,9 @@ export const DASHBOARD_HTML = `<!doctype html>
   }
 
   // --- Horizontal bar chart: repo comparison (magnitude across a category,
-  // not a trend over time \\u2014 a line chart would be the wrong form here).
+  // not a trend over time — a line chart would be the wrong form here).
   // Single series per chart (clones or views), so one color, no legend
-  // needed \\u2014 the chart title already names what it shows.
+  // needed — the chart title already names what it shows.
   function renderBarChart(wrapId, repoRows, valueKey, color) {
     var wrap = document.getElementById(wrapId);
     wrap.innerHTML = "";

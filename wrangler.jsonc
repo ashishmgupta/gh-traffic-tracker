@@ -22,5 +22,11 @@
     // Once a day — GitHub's traffic API is daily-granular anyway, polling
     // more often than that just re-reads the same numbers.
     "crons": ["0 6 * * *"]
-  }
+  },
+  // custom_domain: true means Cloudflare manages the DNS record and SSL
+  // cert for this hostname automatically — the zone just needs to already
+  // be on the same Cloudflare account as this Worker.
+  "routes": [
+    { "pattern": "REPLACE_WITH_YOUR_CUSTOM_DOMAIN", "custom_domain": true }
+  ]
 }
