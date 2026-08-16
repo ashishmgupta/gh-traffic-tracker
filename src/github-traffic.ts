@@ -16,6 +16,9 @@ interface PathRow {
   count: number;
   uniques: number;
 }
+interface TrackedRepo {
+  repo: string;
+}
 
 const GITHUB_API = "https://api.github.com";
 
@@ -86,29 +89,26 @@ function buildEmailHtml(
   `;
 }
 
-/** Daily poll: pulls all four traffic endpoints GitHub exposes, appends
- *  anything new to D1 (GitHub itself only retains 14 days, so this is the
- *  permanent record), and emails if the most recent day's clone count
- *  increased since the last time this ran. Returns a short summary string
- *  for logging/manual-trigger responses. */
-export async function pollGithubTraffic(env: Env): Promise<string> {
+/** Polls and stores traffic for one repo, emailing if its clone count rose.
+ *  Returns a short summary string for logging. */
+async function pollOneRepo(env: Env, repo: string): Promise<string> {
   const capturedAt = new Date().toISOString();
 
   const [clones, views, referrers, paths] = await Promise.all([
-    ghGet<{ count: number; uniques: number; clones: DailyPoint[] }>(env, `/repos/${env.GITHUB_REPO}/traffic/clones`),
-    ghGet<{ count: number; uniques: number; views: DailyPoint[] }>(env, `/repos/${env.GITHUB_REPO}/traffic/views`),
-    ghGet<ReferrerRow[]>(env, `/repos/${env.GITHUB_REPO}/traffic/popular/referrers`),
-    ghGet<PathRow[]>(env, `/repos/${env.GITHUB_REPO}/traffic/popular/paths`),
+    ghGet<{ count: number; uniques: number; clones: DailyPoint[] }>(env, `/repos/${repo}/traffic/clones`),
+    ghGet<{ count: number; uniques: number; views: DailyPoint[] }>(env, `/repos/${repo}/traffic/views`),
+    ghGet<ReferrerRow[]>(env, `/repos/${repo}/traffic/popular/referrers`),
+    ghGet<PathRow[]>(env, `/repos/${repo}/traffic/popular/paths`),
   ]);
 
-  // date is UNIQUE — INSERT OR IGNORE so re-polling the same day never
-  // creates a duplicate row; first write for a given date wins.
+  // (repo, date) is UNIQUE — INSERT OR IGNORE so re-polling the same day
+  // never creates a duplicate row; first write for a given (repo, date) wins.
   if (clones.clones.length > 0) {
     await env.DB.batch(
       clones.clones.map((c) =>
         env.DB
-          .prepare("INSERT OR IGNORE INTO gh_clone_history (date, count, uniques, captured_at) VALUES (?, ?, ?, ?)")
-          .bind(c.timestamp, c.count, c.uniques, capturedAt)
+          .prepare("INSERT OR IGNORE INTO gh_clone_history (repo, date, count, uniques, captured_at) VALUES (?, ?, ?, ?, ?)")
+          .bind(repo, c.timestamp, c.count, c.uniques, capturedAt)
       )
     );
   }
@@ -116,20 +116,20 @@ export async function pollGithubTraffic(env: Env): Promise<string> {
     await env.DB.batch(
       views.views.map((v) =>
         env.DB
-          .prepare("INSERT OR IGNORE INTO gh_view_history (date, count, uniques, captured_at) VALUES (?, ?, ?, ?)")
-          .bind(v.timestamp, v.count, v.uniques, capturedAt)
+          .prepare("INSERT OR IGNORE INTO gh_view_history (repo, date, count, uniques, captured_at) VALUES (?, ?, ?, ?, ?)")
+          .bind(repo, v.timestamp, v.count, v.uniques, capturedAt)
       )
     );
   }
 
   // Referrers/paths aren't day-keyed by GitHub, only ever a rolling 14-day
-  // "top 10" — log each poll's full snapshot, timestamped.
+  // "top 10" per repo — log each poll's full snapshot, timestamped.
   if (referrers.length > 0) {
     await env.DB.batch(
       referrers.map((r) =>
         env.DB
-          .prepare("INSERT INTO gh_referrer_snapshots (captured_at, referrer, count, uniques) VALUES (?, ?, ?, ?)")
-          .bind(capturedAt, r.referrer, r.count, r.uniques)
+          .prepare("INSERT INTO gh_referrer_snapshots (repo, captured_at, referrer, count, uniques) VALUES (?, ?, ?, ?, ?)")
+          .bind(repo, capturedAt, r.referrer, r.count, r.uniques)
       )
     );
   }
@@ -137,33 +137,57 @@ export async function pollGithubTraffic(env: Env): Promise<string> {
     await env.DB.batch(
       paths.map((p) =>
         env.DB
-          .prepare("INSERT INTO gh_path_snapshots (captured_at, path, title, count, uniques) VALUES (?, ?, ?, ?, ?)")
-          .bind(capturedAt, p.path, p.title ?? null, p.count, p.uniques)
+          .prepare("INSERT INTO gh_path_snapshots (repo, captured_at, path, title, count, uniques) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(repo, capturedAt, p.path, p.title ?? null, p.count, p.uniques)
       )
     );
   }
 
   // GitHub's "today" bucket keeps accumulating through the day, so treat any
-  // rise in the most recent day's count over what we last emailed about as
-  // new activity worth notifying on — not just a brand-new date.
+  // rise in the most recent day's count over what we last emailed about (for
+  // this repo) as new activity worth notifying on — not just a new date.
   const latest = clones.clones[clones.clones.length - 1];
   let notified = false;
   if (latest && latest.count > 0) {
     const state = await env.DB
-      .prepare("SELECT last_notified_date, last_notified_count FROM gh_notify_state WHERE id = 1")
+      .prepare("SELECT last_notified_date, last_notified_count FROM gh_notify_state WHERE repo = ?")
+      .bind(repo)
       .first<{ last_notified_date: string | null; last_notified_count: number }>();
     const alreadyNotified = state && state.last_notified_date === latest.timestamp && state.last_notified_count >= latest.count;
 
     if (!alreadyNotified) {
-      const html = buildEmailHtml(env.GITHUB_REPO, latest, clones, views, referrers, paths);
-      await sendEmail(env, `${env.GITHUB_REPO}: ${latest.count} clone(s) on ${latest.timestamp.slice(0, 10)}`, html);
+      const html = buildEmailHtml(repo, latest, clones, views, referrers, paths);
+      await sendEmail(env, `${repo}: ${latest.count} clone(s) on ${latest.timestamp.slice(0, 10)}`, html);
       await env.DB
-        .prepare("UPDATE gh_notify_state SET last_notified_date = ?, last_notified_count = ? WHERE id = 1")
-        .bind(latest.timestamp, latest.count)
+        .prepare(
+          "INSERT INTO gh_notify_state (repo, last_notified_date, last_notified_count) VALUES (?, ?, ?) " +
+            "ON CONFLICT(repo) DO UPDATE SET last_notified_date = excluded.last_notified_date, last_notified_count = excluded.last_notified_count"
+        )
+        .bind(repo, latest.timestamp, latest.count)
         .run();
       notified = true;
     }
   }
 
-  return `polled ${env.GITHUB_REPO}: ${clones.count} clones / ${views.count} views (14d), latest day ${latest?.timestamp?.slice(0, 10) ?? "n/a"} = ${latest?.count ?? 0} clone(s), email sent: ${notified}`;
+  return `${repo}: ${clones.count} clones / ${views.count} views (14d), latest day ${latest?.timestamp?.slice(0, 10) ?? "n/a"} = ${latest?.count ?? 0} clone(s), email sent: ${notified}`;
+}
+
+/** Daily poll entrypoint: polls every enabled repo in tracked_repos (add/
+ *  remove rows via wrangler d1 execute — same pattern as pq-radar's
+ *  subnets table). One repo failing doesn't stop the others. */
+export async function pollGithubTraffic(env: Env): Promise<string> {
+  const repos = await env.DB.prepare("SELECT repo FROM tracked_repos WHERE enabled = 1").all<TrackedRepo>();
+  if (repos.results.length === 0) {
+    return "no tracked repos configured (see tracked_repos table)";
+  }
+
+  const summaries: string[] = [];
+  for (const { repo } of repos.results) {
+    try {
+      summaries.push(await pollOneRepo(env, repo));
+    } catch (err) {
+      summaries.push(`${repo}: FAILED - ${String(err)}`);
+    }
+  }
+  return summaries.join(" | ");
 }

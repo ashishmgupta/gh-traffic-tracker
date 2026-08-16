@@ -1,7 +1,9 @@
 export interface Env {
   DB: D1Database;
+  // GITHUB_TOKEN needs read access to every repo listed in the tracked_repos
+  // table (see migrations/0002_multi_repo.sql) — which repos to poll is D1
+  // config now, not a fixed var, same pattern as subnets in pq-radar.
   GITHUB_TOKEN: string;
-  GITHUB_REPO: string;
   RESEND_API_KEY: string;
   NOTIFY_EMAIL: string;
   NOTIFY_FROM_EMAIL: string;

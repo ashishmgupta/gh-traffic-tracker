@@ -6,10 +6,11 @@
   // No top-level account_id: wrangler uses whichever account you're logged
   // into (or prompts you to pick one, if you have several).
   "vars": {
-    "GITHUB_REPO": "REPLACE_WITH_YOUR_GITHUB_OWNER/REPO",
     "NOTIFY_EMAIL": "REPLACE_WITH_YOUR_EMAIL",
     "NOTIFY_FROM_EMAIL": "onboarding@resend.dev"
   },
+  // Which repos get polled is config in D1 (tracked_repos table), not a var
+  // here — see README.md. Add repos with wrangler d1 execute.
   "d1_databases": [
     {
       "binding": "DB",

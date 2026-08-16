@@ -19,8 +19,11 @@ everything available:
 - Top-visited paths in the repo (rolling 14-day window)
 
 This is a small standalone Cloudflare Worker + D1 database — intentionally
-not part of any other project, so it can point at any repo you own without
-being coupled to that repo's own deploy.
+not part of any other project, so it can point at any repo(s) you own
+without being coupled to that repo's own deploy. Tracks any number of
+repos, added/removed via the `tracked_repos` table (same "config lives in
+D1" pattern as the subnets table in pq-radar) — no redeploy needed to add
+or drop a repo.
 
 ## Setup
 
@@ -54,10 +57,12 @@ being coupled to that repo's own deploy.
    ```
    - `GITHUB_TOKEN` — a **fine-grained** Personal Access Token
      (github.com → Settings → Developer settings → Personal access tokens →
-     Fine-grained tokens), scoped to just the one repo you're tracking, with
-     read access to "Administration" (this is what the traffic API requires —
-     equivalent to push access; GitHub doesn't offer anything narrower for
-     it). Don't reuse a broad personal token here.
+     Fine-grained tokens), scoped to "Only select repositories" — pick every
+     repo you plan to track (up to 50) — with read access to
+     "Administration" (this is what the traffic API requires — equivalent to
+     push access; GitHub doesn't offer anything narrower for it). Don't
+     reuse a broad personal token here. Adding a new repo to `tracked_repos`
+     later also means adding it to this token's repository list.
    - `RESEND_API_KEY` — sign up at resend.com (free tier is plenty), create
      an API key. The default `NOTIFY_FROM_EMAIL` (`onboarding@resend.dev`) is
      Resend's shared sandbox sender and works without verifying your own
@@ -65,19 +70,32 @@ being coupled to that repo's own deploy.
    - `TRIGGER_SECRET` — a secret you make up, gates the manual `/trigger`
      endpoint used for on-demand testing (the real schedule is the cron).
 
-6. **Set `GITHUB_REPO` and `NOTIFY_EMAIL`** in `wrangler.jsonc`'s `vars` —
-   `GITHUB_REPO` is `owner/repo`, `NOTIFY_EMAIL` is where alerts go.
+6. **Set `NOTIFY_EMAIL`** in `wrangler.jsonc`'s `vars` — where alerts go.
+   (All tracked repos currently notify the same address; there's no
+   per-repo override.)
 
-7. **Deploy**
+7. **Add the repo(s) to track** — `tracked_repos` is empty until you add
+   rows:
+   ```
+   npx wrangler d1 execute gh-traffic-tracker --remote --command \
+     "INSERT INTO tracked_repos (repo, enabled, added_at) VALUES ('owner/repo', 1, datetime('now'))"
+   ```
+   Remove one by setting `enabled = 0` (keeps its history) or deleting the
+   row outright. Remember: `GITHUB_TOKEN` also needs access to whatever you
+   add here.
+
+8. **Deploy**
    ```
    npx wrangler deploy
    ```
 
-8. **Test it on demand** (don't wait for the daily cron):
+9. **Test it on demand** (don't wait for the daily cron):
    ```
    curl -X POST https://<your-worker>.workers.dev/trigger \
      -H "Authorization: Bearer <your TRIGGER_SECRET>"
    ```
+   Polls every enabled repo in `tracked_repos` in one run; the response
+   summarizes each one.
 
 Runs automatically once a day thereafter (`triggers.crons` in
 `wrangler.jsonc`, default `0 6 * * *` UTC).
