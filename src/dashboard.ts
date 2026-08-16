@@ -132,7 +132,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 <div class="page">
 
   <div id="gate">
-    <h1>gh-traffic-tracker</h1>
+    <h1>Github Traffic Tracker</h1>
     <p>Enter the API secret to view clone/view stats.</p>
     <div id="gate-error" class="error" style="display:none">Invalid secret.</div>
     <input id="secret-input" type="password" placeholder="API secret" autocomplete="off">
@@ -140,7 +140,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   </div>
 
   <div id="app">
-    <h1>gh-traffic-tracker</h1>
+    <h1>Github Traffic Tracker</h1>
     <p class="subtitle">Clone and view history GitHub itself only keeps for 14 days — stored permanently here.</p>
 
     <div class="toolbar">
