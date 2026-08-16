@@ -182,14 +182,16 @@ export const DASHBOARD_HTML = `<!doctype html>
         <div class="chart-wrap" id="views-chart-wrap"></div>
       </div>
 
-      <div class="chart-card">
-        <h2>Clones by repo (top 12, all-time)</h2>
-        <div class="chart-wrap" id="clones-bar-wrap"></div>
-      </div>
+      <div class="tables-row" style="margin-bottom:28px;">
+        <div class="chart-card">
+          <h2>Clones by repo (top 12, all-time)</h2>
+          <div class="chart-wrap" id="clones-bar-wrap"></div>
+        </div>
 
-      <div class="chart-card" style="margin-bottom:28px;">
-        <h2>Views by repo (top 12, all-time)</h2>
-        <div class="chart-wrap" id="views-bar-wrap"></div>
+        <div class="chart-card">
+          <h2>Views by repo (top 12, all-time)</h2>
+          <div class="chart-wrap" id="views-bar-wrap"></div>
+        </div>
       </div>
 
       <h2 class="section">All tracked repos</h2>
