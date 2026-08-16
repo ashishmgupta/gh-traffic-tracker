@@ -124,9 +124,24 @@ function buildEmailHtml(
   `;
 }
 
-/** Polls and stores traffic for one repo, emailing if its clone count rose.
- *  Returns a short summary string for logging. */
-async function pollOneRepo(env: Env, repo: string): Promise<string> {
+export interface RepoPollResult {
+  repo: string;
+  clonesTotal14d: number;
+  viewsTotal14d: number;
+  emailSent: boolean;
+  error?: string;
+}
+
+export interface PollResult {
+  discoverySeen: number;
+  discoveryAdded: number;
+  discoveryError?: string;
+  repos: RepoPollResult[];
+  emailsSent: number;
+}
+
+/** Polls and stores traffic for one repo, emailing if its clone count rose. */
+async function pollOneRepo(env: Env, repo: string): Promise<RepoPollResult> {
   const capturedAt = new Date().toISOString();
 
   const [clones, views, referrers, paths] = await Promise.all([
@@ -204,37 +219,48 @@ async function pollOneRepo(env: Env, repo: string): Promise<string> {
     }
   }
 
-  return `${repo}: ${clones.count} clones / ${views.count} views (14d), latest day ${latest?.timestamp?.slice(0, 10) ?? "n/a"} = ${latest?.count ?? 0} clone(s), email sent: ${notified}`;
+  return { repo, clonesTotal14d: clones.count, viewsTotal14d: views.count, emailSent: notified };
 }
 
 /** Daily poll entrypoint: auto-discovers every repo GITHUB_TOKEN owns (see
  *  syncTrackedRepos), then polls every enabled repo in tracked_repos —
  *  enabled=0 rows stay excluded even if rediscovered, so turning a repo off
- *  sticks. One repo failing doesn't stop the others. */
-export async function pollGithubTraffic(env: Env): Promise<string> {
-  let discoveryNote: string;
+ *  sticks. One repo failing doesn't stop the others. Returns structured
+ *  data rather than one long string — the caller (index.ts) decides how
+ *  much of it to show; full per-repo detail also goes to console.log for
+ *  the cron's own logs regardless of what the caller does with it. */
+export async function pollGithubTraffic(env: Env): Promise<PollResult> {
+  let discoverySeen = 0;
+  let discoveryAdded = 0;
+  let discoveryError: string | undefined;
   try {
     const { seen, added } = await syncTrackedRepos(env);
-    discoveryNote = `discovery: saw ${seen} repo(s) via token, added ${added} new`;
+    discoverySeen = seen;
+    discoveryAdded = added;
   } catch (err) {
     // Surfaced, not swallowed — a discovery failure (bad token scope, wrong
     // permission, rate limit) used to disappear into console.error only,
     // with no way to tell from outside why the repo list wasn't growing.
-    discoveryNote = `discovery FAILED: ${String(err)}`;
+    discoveryError = String(err);
   }
 
-  const repos = await env.DB.prepare("SELECT repo FROM tracked_repos WHERE enabled = 1").all<TrackedRepo>();
-  if (repos.results.length === 0) {
-    return `${discoveryNote} | no tracked repos configured`;
-  }
+  const tracked = await env.DB.prepare("SELECT repo FROM tracked_repos WHERE enabled = 1").all<TrackedRepo>();
 
-  const summaries: string[] = [discoveryNote];
-  for (const { repo } of repos.results) {
+  const repos: RepoPollResult[] = [];
+  for (const { repo } of tracked.results) {
     try {
-      summaries.push(await pollOneRepo(env, repo));
+      repos.push(await pollOneRepo(env, repo));
     } catch (err) {
-      summaries.push(`${repo}: FAILED - ${String(err)}`);
+      repos.push({ repo, clonesTotal14d: 0, viewsTotal14d: 0, emailSent: false, error: String(err) });
     }
   }
-  return summaries.join(" | ");
+
+  console.log(
+    `github-traffic: discovery saw ${discoverySeen}, added ${discoveryAdded}` +
+      (discoveryError ? `, FAILED: ${discoveryError}` : "") +
+      ` | polled ${repos.length} repo(s): ` +
+      repos.map((r) => `${r.repo}=${r.error ? "ERROR: " + r.error : r.clonesTotal14d + "c/" + r.viewsTotal14d + "v"}`).join(", ")
+  );
+
+  return { discoverySeen, discoveryAdded, discoveryError, repos, emailsSent: repos.filter((r) => r.emailSent).length };
 }

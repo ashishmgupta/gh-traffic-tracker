@@ -125,8 +125,8 @@ export default {
       if (authError) return authError;
 
       try {
-        const summary = await pollGithubTraffic(env);
-        return Response.json({ ok: true, summary });
+        const result = await pollGithubTraffic(env);
+        return Response.json({ ok: true, result });
       } catch (err) {
         return Response.json({ ok: false, error: String(err) }, { status: 500 });
       }
@@ -136,10 +136,8 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(
-      pollGithubTraffic(env)
-        .then((summary) => console.log(`cron: ${summary}`))
-        .catch((err) => console.error("cron: github traffic poll failed:", err))
-    );
+    // pollGithubTraffic already logs its own detailed summary — nothing
+    // further needed here beyond catching a total failure.
+    ctx.waitUntil(pollGithubTraffic(env).catch((err) => console.error("cron: github traffic poll failed:", err)));
   },
 };

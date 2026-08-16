@@ -118,6 +118,14 @@ export const DASHBOARD_HTML = `<!doctype html>
   @media (max-width: 700px) { .tables-row { grid-template-columns: 1fr; } }
 
   h2.section { font-size: 13px; font-weight: 700; color: var(--text-secondary); margin: 0 0 10px; }
+
+  .filter-toggle { display: flex; gap: 6px; margin: 0 0 14px; }
+  .filter-toggle button {
+    padding: 5px 12px; font-size: 12px; font-weight: 600; border: 1px solid var(--border);
+    border-radius: 999px; background: var(--surface-1); color: var(--text-secondary); cursor: pointer;
+    font-family: var(--mono);
+  }
+  .filter-toggle button.active { background: var(--accent); color: #06230a; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -154,8 +162,25 @@ export const DASHBOARD_HTML = `<!doctype html>
       </table>
     </div>
 
+    <div class="chart-card">
+      <h2>Clones by repo (top 12, all-time)</h2>
+      <div class="chart-wrap" id="clones-bar-wrap"></div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:28px;">
+      <h2>Views by repo (top 12, all-time)</h2>
+      <div class="chart-wrap" id="views-bar-wrap"></div>
+    </div>
+
     <div id="content" style="display:none">
       <div class="tiles" id="tiles"></div>
+
+      <div class="filter-toggle" id="date-filter">
+        <button data-days="7" type="button">7d</button>
+        <button data-days="30" type="button" class="active">30d</button>
+        <button data-days="90" type="button">90d</button>
+        <button data-days="all" type="button">All</button>
+      </div>
 
       <div class="chart-card">
         <h2>Clones per day</h2>
@@ -300,6 +325,41 @@ export const DASHBOARD_HTML = `<!doctype html>
     svg.addEventListener("mouseleave", function () { tooltip.style.display = "none"; });
   }
 
+  // --- Horizontal bar chart: repo comparison (magnitude across a category,
+  // not a trend over time \\u2014 a line chart would be the wrong form here).
+  // Single series per chart (clones or views), so one color, no legend
+  // needed \\u2014 the chart title already names what it shows.
+  function renderBarChart(wrapId, repoRows, valueKey, color) {
+    var wrap = document.getElementById(wrapId);
+    wrap.innerHTML = "";
+
+    var top = repoRows.slice().sort(function (a, b) { return b[valueKey] - a[valueKey]; }).slice(0, 12);
+    if (!top.length || top[0][valueKey] === 0) {
+      wrap.innerHTML = '<p class="muted" style="font-size:12px;">No data yet.</p>';
+      return;
+    }
+
+    var W = 900, labelW = 190, rightPad = 50, barH = 20, gap = 8;
+    var plotW = W - labelW - rightPad;
+    var H = top.length * (barH + gap);
+    var maxVal = top[0][valueKey] || 1;
+
+    var bars = top.map(function (r, i) {
+      var val = r[valueKey];
+      var w = Math.max((val / maxVal) * plotW, 1);
+      var yPos = i * (barH + gap);
+      var label = r.repo.length > 28 ? r.repo.slice(0, 27) + "\\u2026" : r.repo;
+      return (
+        '<text x="' + (labelW - 8) + '" y="' + (yPos + barH / 2 + 4) + '" font-size="11" fill="var(--text-secondary)" text-anchor="end">' +
+        escapeHtml(label) + '</text>' +
+        '<rect x="' + labelW + '" y="' + yPos + '" width="' + w + '" height="' + barH + '" rx="3" fill="' + color + '"/>' +
+        '<text x="' + (labelW + w + 6) + '" y="' + (yPos + barH / 2 + 4) + '" font-size="11" fill="var(--text-primary)">' + val + '</text>'
+      );
+    }).join("");
+
+    wrap.innerHTML = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Repo comparison, top 12 by ' + valueKey + '">' + bars + '</svg>';
+  }
+
   function renderTiles(totals) {
     var el = document.getElementById("tiles");
     el.innerHTML =
@@ -352,7 +412,13 @@ export const DASHBOARD_HTML = `<!doctype html>
   function loadReposSummary() {
     return fetch("/api/repos-summary", { headers: authHeaders() })
       .then(function (res) { return res.ok ? res.json() : { repos: [] }; })
-      .then(function (data) { renderReposSummary(data.repos || []); })
+      .then(function (data) {
+        var rows = data.repos || [];
+        renderReposSummary(rows);
+        var colorTotal = getComputedColor("--series-total");
+        renderBarChart("clones-bar-wrap", rows, "clone_count_sum", colorTotal);
+        renderBarChart("views-bar-wrap", rows, "view_count_sum", colorTotal);
+      })
       .catch(function () { /* comparison table is a bonus view, never block the rest of the page on it */ });
   }
 
@@ -365,6 +431,38 @@ export const DASHBOARD_HTML = `<!doctype html>
     currentRepo = r.repo;
     loadStats();
     renderReposSummary(lastReposSummary);
+  });
+
+  // Trend charts refetch per repo (via /api/stats) but not per date-range
+  // change — the date filter just re-slices what's already been fetched,
+  // client-side, since the stored history is small enough not to need a
+  // server round-trip just to change the window.
+  var lastClonesRows = [];
+  var lastViewsRows = [];
+  var currentDateDays = 30;
+
+  function filterByDays(rows, days) {
+    if (days === "all") return rows;
+    var cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - Number(days));
+    var cutoffStr = cutoff.toISOString().slice(0, 10);
+    return rows.filter(function (r) { return r.date.slice(0, 10) >= cutoffStr; });
+  }
+
+  function renderTrendCharts() {
+    var colorTotal = getComputedColor("--series-total");
+    var colorUnique = getComputedColor("--series-unique");
+    renderLineChart("clones-chart-wrap", filterByDays(lastClonesRows, currentDateDays), colorTotal, colorUnique);
+    renderLineChart("views-chart-wrap", filterByDays(lastViewsRows, currentDateDays), colorTotal, colorUnique);
+  }
+
+  document.getElementById("date-filter").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-days]");
+    if (!btn) return;
+    currentDateDays = btn.getAttribute("data-days");
+    document.querySelectorAll("#date-filter button").forEach(function (b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    renderTrendCharts();
   });
 
   function loadStats() {
@@ -389,10 +487,9 @@ export const DASHBOARD_HTML = `<!doctype html>
         }).join("");
 
         renderTiles(data.totals);
-        var colorTotal = getComputedColor("--series-total");
-        var colorUnique = getComputedColor("--series-unique");
-        renderLineChart("clones-chart-wrap", data.clones, colorTotal, colorUnique);
-        renderLineChart("views-chart-wrap", data.views, colorTotal, colorUnique);
+        lastClonesRows = data.clones;
+        lastViewsRows = data.views;
+        renderTrendCharts();
         renderReferrers(data.referrers);
         renderPaths(data.paths);
       })
@@ -426,9 +523,17 @@ export const DASHBOARD_HTML = `<!doctype html>
     fetch("/trigger", { method: "POST", headers: authHeaders() })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        // Shows the real summary (including the discovery result) rather
-        // than just "done" \\u2014 this is what used to be silently swallowed.
-        status.textContent = data.ok ? data.summary : "Poll failed: " + data.error;
+        if (!data.ok) {
+          status.textContent = "Poll failed: " + data.error;
+        } else {
+          var r = data.result;
+          var errCount = r.repos.filter(function (x) { return x.error; }).length;
+          status.textContent = "Polled " + r.repos.length + " repo(s)" +
+            (r.discoveryAdded ? ", " + r.discoveryAdded + " newly discovered" : "") +
+            (r.emailsSent ? ", " + r.emailsSent + " email(s) sent" : "") +
+            (r.discoveryError ? " \\u2014 discovery error: " + r.discoveryError : "") +
+            (errCount ? " \\u2014 " + errCount + " repo(s) failed" : "");
+        }
         btn.disabled = false;
         loadStats();
         loadReposSummary();
