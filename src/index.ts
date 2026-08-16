@@ -41,11 +41,11 @@ export default {
       return Response.json({ status: "ok" });
     }
 
-    // Everything the dashboard needs for one repo, in one call: the full
-    // stored history (not just GitHub's 14-day window — that's the entire
-    // point of storing it), the most recent referrer/path snapshot, and
-    // all-time cumulative totals. ?repo= picks which tracked repo; defaults
-    // to the first one if omitted.
+    // Everything the dashboard needs for one repo (or the "__all__"
+    // aggregate across every tracked repo — the default), in one call: the
+    // full stored history (not just GitHub's 14-day window — that's the
+    // entire point of storing it), the most recent referrer/path snapshot,
+    // and all-time cumulative totals.
     if (url.pathname === "/api/stats" && request.method === "GET") {
       const authError = checkAuth(request, env);
       if (authError) return authError;
@@ -55,35 +55,61 @@ export default {
         return Response.json({ error: "no tracked repos configured" }, { status: 404 });
       }
       const repoParam = url.searchParams.get("repo");
-      const repo = repoParam && repos.results.some((r) => r.repo === repoParam) ? repoParam : repos.results[0].repo;
+      const repo = repoParam && repos.results.some((r) => r.repo === repoParam) ? repoParam : "__all__";
+      const isAll = repo === "__all__";
 
-      const [clones, views, referrers, paths, totals] = await Promise.all([
-        env.DB.prepare("SELECT date, count, uniques FROM gh_clone_history WHERE repo = ? ORDER BY date ASC").bind(repo).all<DailyRow>(),
-        env.DB.prepare("SELECT date, count, uniques FROM gh_view_history WHERE repo = ? ORDER BY date ASC").bind(repo).all<DailyRow>(),
-        env.DB.prepare(
-          `SELECT referrer, count, uniques FROM gh_referrer_snapshots
-           WHERE repo = ? AND captured_at = (SELECT MAX(captured_at) FROM gh_referrer_snapshots WHERE repo = ?)
-           ORDER BY count DESC`
-        )
-          .bind(repo, repo)
-          .all<ReferrerSnapshotRow>(),
-        env.DB.prepare(
-          `SELECT path, title, count, uniques FROM gh_path_snapshots
-           WHERE repo = ? AND captured_at = (SELECT MAX(captured_at) FROM gh_path_snapshots WHERE repo = ?)
-           ORDER BY count DESC`
-        )
-          .bind(repo, repo)
-          .all<PathSnapshotRow>(),
-        env.DB.prepare(
-          `SELECT
-             (SELECT COALESCE(SUM(count), 0) FROM gh_clone_history WHERE repo = ?) AS clone_count_sum,
-             (SELECT COALESCE(SUM(uniques), 0) FROM gh_clone_history WHERE repo = ?) AS clone_uniques_sum,
-             (SELECT COALESCE(SUM(count), 0) FROM gh_view_history WHERE repo = ?) AS view_count_sum,
-             (SELECT COALESCE(SUM(uniques), 0) FROM gh_view_history WHERE repo = ?) AS view_uniques_sum`
-        )
-          .bind(repo, repo, repo, repo)
-          .first<{ clone_count_sum: number; clone_uniques_sum: number; view_count_sum: number; view_uniques_sum: number }>(),
-      ]);
+      const [clones, views, referrers, paths, totals] = isAll
+        ? await Promise.all([
+            env.DB.prepare("SELECT date, SUM(count) AS count, SUM(uniques) AS uniques FROM gh_clone_history GROUP BY date ORDER BY date ASC").all<DailyRow>(),
+            env.DB.prepare("SELECT date, SUM(count) AS count, SUM(uniques) AS uniques FROM gh_view_history GROUP BY date ORDER BY date ASC").all<DailyRow>(),
+            // Each repo's own latest snapshot only (not every historical
+            // poll — that would double-count the same referrer across many
+            // captured_at timestamps), summed across repos by referrer name.
+            env.DB.prepare(
+              `SELECT referrer, SUM(count) AS count, SUM(uniques) AS uniques FROM gh_referrer_snapshots s
+               WHERE s.captured_at = (SELECT MAX(captured_at) FROM gh_referrer_snapshots WHERE repo = s.repo)
+               GROUP BY referrer ORDER BY count DESC LIMIT 10`
+            ).all<ReferrerSnapshotRow>(),
+            env.DB.prepare(
+              `SELECT path, NULL AS title, SUM(count) AS count, SUM(uniques) AS uniques FROM gh_path_snapshots s
+               WHERE s.captured_at = (SELECT MAX(captured_at) FROM gh_path_snapshots WHERE repo = s.repo)
+               GROUP BY path ORDER BY count DESC LIMIT 10`
+            ).all<PathSnapshotRow>(),
+            env.DB.prepare(
+              `SELECT
+                 COALESCE((SELECT SUM(count) FROM gh_clone_history), 0) AS clone_count_sum,
+                 COALESCE((SELECT SUM(uniques) FROM gh_clone_history), 0) AS clone_uniques_sum,
+                 COALESCE((SELECT SUM(count) FROM gh_view_history), 0) AS view_count_sum,
+                 COALESCE((SELECT SUM(uniques) FROM gh_view_history), 0) AS view_uniques_sum`
+            ).first<{ clone_count_sum: number; clone_uniques_sum: number; view_count_sum: number; view_uniques_sum: number }>(),
+          ])
+        : await Promise.all([
+            env.DB.prepare("SELECT date, count, uniques FROM gh_clone_history WHERE repo = ? ORDER BY date ASC").bind(repo).all<DailyRow>(),
+            env.DB.prepare("SELECT date, count, uniques FROM gh_view_history WHERE repo = ? ORDER BY date ASC").bind(repo).all<DailyRow>(),
+            env.DB.prepare(
+              `SELECT referrer, count, uniques FROM gh_referrer_snapshots
+               WHERE repo = ? AND captured_at = (SELECT MAX(captured_at) FROM gh_referrer_snapshots WHERE repo = ?)
+               ORDER BY count DESC`
+            )
+              .bind(repo, repo)
+              .all<ReferrerSnapshotRow>(),
+            env.DB.prepare(
+              `SELECT path, title, count, uniques FROM gh_path_snapshots
+               WHERE repo = ? AND captured_at = (SELECT MAX(captured_at) FROM gh_path_snapshots WHERE repo = ?)
+               ORDER BY count DESC`
+            )
+              .bind(repo, repo)
+              .all<PathSnapshotRow>(),
+            env.DB.prepare(
+              `SELECT
+                 (SELECT COALESCE(SUM(count), 0) FROM gh_clone_history WHERE repo = ?) AS clone_count_sum,
+                 (SELECT COALESCE(SUM(uniques), 0) FROM gh_clone_history WHERE repo = ?) AS clone_uniques_sum,
+                 (SELECT COALESCE(SUM(count), 0) FROM gh_view_history WHERE repo = ?) AS view_count_sum,
+                 (SELECT COALESCE(SUM(uniques), 0) FROM gh_view_history WHERE repo = ?) AS view_uniques_sum`
+            )
+              .bind(repo, repo, repo, repo)
+              .first<{ clone_count_sum: number; clone_uniques_sum: number; view_count_sum: number; view_uniques_sum: number }>(),
+          ]);
 
       return Response.json({
         repos: repos.results.map((r) => r.repo),

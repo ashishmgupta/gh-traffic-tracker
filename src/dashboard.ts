@@ -173,6 +173,7 @@ export const DASHBOARD_HTML = `<!doctype html>
     </div>
 
     <div id="content" style="display:none">
+      <h2 class="section" id="detail-heading" style="margin-top:0;">Showing: All repos</h2>
       <div class="tiles" id="tiles"></div>
 
       <div class="filter-toggle" id="date-filter">
@@ -482,9 +483,12 @@ export const DASHBOARD_HTML = `<!doctype html>
         currentRepo = data.repo;
 
         var select = document.getElementById("repo-select");
-        select.innerHTML = data.repos.map(function (r) {
-          return '<option value="' + escapeHtml(r) + '"' + (r === data.repo ? " selected" : "") + '>' + escapeHtml(r) + '</option>';
-        }).join("");
+        select.innerHTML =
+          '<option value="__all__"' + (data.repo === "__all__" ? " selected" : "") + '>All repos</option>' +
+          data.repos.map(function (r) {
+            return '<option value="' + escapeHtml(r) + '"' + (r === data.repo ? " selected" : "") + '>' + escapeHtml(r) + '</option>';
+          }).join("");
+        document.getElementById("detail-heading").textContent = "Showing: " + (data.repo === "__all__" ? "All repos (" + data.repos.length + ")" : data.repo);
 
         renderTiles(data.totals);
         lastClonesRows = data.clones;
