@@ -83,6 +83,18 @@ export const DASHBOARD_HTML = `<!doctype html>
   .legend .swatch.unique { background: var(--series-unique); border-top: 2px dashed var(--series-unique); background: none; height: 0; }
 
   .chart-wrap { position: relative; overflow-x: auto; }
+
+  .repo-rank-list { display: flex; flex-direction: column; }
+  .repo-rank-row {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    padding: 11px 0; border-bottom: 1px solid var(--gridline);
+  }
+  .repo-rank-row:last-child { border-bottom: none; }
+  .repo-rank-row .name {
+    font-size: 16px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .repo-rank-row .count { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
   svg.chart { display: block; width: 100%; height: auto; }
   .chart-tooltip {
     position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--border);
@@ -336,13 +348,13 @@ export const DASHBOARD_HTML = `<!doctype html>
     svg.addEventListener("mouseleave", function () { tooltip.style.display = "none"; });
   }
 
-  // --- Horizontal bar chart: repo comparison (magnitude across a category,
-  // not a trend over time — a line chart would be the wrong form here).
-  // Single series per chart (clones or views), so one color, no legend
-  // needed — the chart title already names what it shows.
-  function renderBarChart(wrapId, repoRows, valueKey, color) {
+  // --- Repo comparison: a plain ranked list, not a bar chart. A bar's
+  // length only reads clearly when the values span a narrow range; here one
+  // repo routinely dwarfs the rest, which reduced every other bar to a
+  // sliver no matter how the scale was tuned. Name + count, large and
+  // legible, in ranked order, says the same thing without that problem.
+  function renderRepoRankList(wrapId, repoRows, valueKey, color) {
     var wrap = document.getElementById(wrapId);
-    wrap.innerHTML = "";
 
     var top = repoRows.slice().sort(function (a, b) { return b[valueKey] - a[valueKey]; }).slice(0, 12);
     if (!top.length || top[0][valueKey] === 0) {
@@ -350,34 +362,15 @@ export const DASHBOARD_HTML = `<!doctype html>
       return;
     }
 
-    // These two charts now sit side by side (half the container width each
-    // — see the .tables-row wrapper in the markup), so the coordinate-space
-    // metrics below are sized up from the original full-width values to
-    // keep the on-screen text/bar thickness readable at that narrower
-    // rendered width (the SVG scales via width:100% off this viewBox).
-    var W = 900, labelW = 260, rightPad = 70, barH = 30, gap = 12, fontSize = 20;
-    var plotW = W - labelW - rightPad;
-    var H = top.length * (barH + gap);
-    var maxVal = top[0][valueKey] || 1;
-    // A little more than 1px so a nonzero-but-small value stays visibly a
-    // bar, not a sliver that reads as zero next to a much larger max.
-    var minBarW = 4;
-
-    var bars = top.map(function (r, i) {
-      var val = r[valueKey];
-      var w = val > 0 ? Math.max((val / maxVal) * plotW, minBarW) : 0;
-      var yPos = i * (barH + gap);
-      var repoName = shortRepo(r.repo);
-      var label = repoName.length > 21 ? repoName.slice(0, 20) + "\\u2026" : repoName;
+    wrap.innerHTML = '<div class="repo-rank-list">' + top.map(function (r) {
+      var name = shortRepo(r.repo);
       return (
-        '<text x="' + (labelW - 8) + '" y="' + (yPos + barH / 2 + 6) + '" font-size="' + fontSize + '" fill="var(--text-secondary)" text-anchor="end">' +
-        escapeHtml(label) + '</text>' +
-        '<rect x="' + labelW + '" y="' + yPos + '" width="' + w + '" height="' + barH + '" rx="3" fill="' + color + '"/>' +
-        '<text x="' + (labelW + w + 8) + '" y="' + (yPos + barH / 2 + 6) + '" font-size="' + fontSize + '" fill="var(--text-primary)">' + val + '</text>'
+        '<div class="repo-rank-row">' +
+        '<span class="name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
+        '<span class="count" style="color:' + color + '">' + r[valueKey] + '</span>' +
+        '</div>'
       );
-    }).join("");
-
-    wrap.innerHTML = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Repo comparison, top 12 by ' + valueKey + '">' + bars + '</svg>';
+    }).join("") + '</div>';
   }
 
   function renderTiles(totals) {
@@ -436,8 +429,8 @@ export const DASHBOARD_HTML = `<!doctype html>
         var rows = data.repos || [];
         renderReposSummary(rows);
         var colorTotal = getComputedColor("--series-total");
-        renderBarChart("clones-bar-wrap", rows, "clone_count_sum", colorTotal);
-        renderBarChart("views-bar-wrap", rows, "view_count_sum", colorTotal);
+        renderRepoRankList("clones-bar-wrap", rows, "clone_count_sum", colorTotal);
+        renderRepoRankList("views-bar-wrap", rows, "view_count_sum", colorTotal);
       })
       .catch(function () { /* comparison table is a bonus view, never block the rest of the page on it */ });
   }
