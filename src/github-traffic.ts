@@ -38,6 +38,36 @@ async function ghGet<T>(env: Env, path: string): Promise<T> {
   return res.json();
 }
 
+/** Discovers every repo GITHUB_TOKEN has owner-level access to and adds any
+ *  not already in tracked_repos (INSERT OR IGNORE — never touches enabled=0
+ *  rows, so a repo you've deliberately turned off stays off even if
+ *  rediscovered). Called at the start of every poll so newly created repos
+ *  get picked up automatically, no manual SQL needed. */
+async function syncTrackedRepos(env: Env): Promise<void> {
+  const discovered: string[] = [];
+  let page = 1;
+  while (true) {
+    const repos = await ghGet<{ full_name: string }[]>(
+      env,
+      `/user/repos?affiliation=owner&per_page=100&page=${page}`
+    );
+    discovered.push(...repos.map((r) => r.full_name));
+    if (repos.length < 100) break;
+    page++;
+  }
+
+  if (discovered.length > 0) {
+    const now = new Date().toISOString();
+    await env.DB.batch(
+      discovered.map((repo) =>
+        env.DB
+          .prepare("INSERT OR IGNORE INTO tracked_repos (repo, enabled, added_at) VALUES (?, 1, ?)")
+          .bind(repo, now)
+      )
+    );
+  }
+}
+
 async function sendEmail(env: Env, subject: string, html: string): Promise<void> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -172,10 +202,17 @@ async function pollOneRepo(env: Env, repo: string): Promise<string> {
   return `${repo}: ${clones.count} clones / ${views.count} views (14d), latest day ${latest?.timestamp?.slice(0, 10) ?? "n/a"} = ${latest?.count ?? 0} clone(s), email sent: ${notified}`;
 }
 
-/** Daily poll entrypoint: polls every enabled repo in tracked_repos (add/
- *  remove rows via wrangler d1 execute — same pattern as pq-radar's
- *  subnets table). One repo failing doesn't stop the others. */
+/** Daily poll entrypoint: auto-discovers every repo GITHUB_TOKEN owns (see
+ *  syncTrackedRepos), then polls every enabled repo in tracked_repos —
+ *  enabled=0 rows stay excluded even if rediscovered, so turning a repo off
+ *  sticks. One repo failing doesn't stop the others. */
 export async function pollGithubTraffic(env: Env): Promise<string> {
+  try {
+    await syncTrackedRepos(env);
+  } catch (err) {
+    console.error("github-traffic: repo discovery failed, continuing with existing tracked_repos:", err);
+  }
+
   const repos = await env.DB.prepare("SELECT repo FROM tracked_repos WHERE enabled = 1").all<TrackedRepo>();
   if (repos.results.length === 0) {
     return "no tracked repos configured (see tracked_repos table)";

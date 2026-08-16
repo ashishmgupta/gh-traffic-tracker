@@ -74,15 +74,19 @@ or drop a repo.
    (All tracked repos currently notify the same address; there's no
    per-repo override.)
 
-7. **Add the repo(s) to track** — `tracked_repos` is empty until you add
-   rows:
+7. **Repos to track** — auto-discovered. Every poll starts by listing every
+   repo `GITHUB_TOKEN` owns (`GET /user/repos?affiliation=owner`) and adding
+   any new ones to `tracked_repos` automatically — nothing to configure if
+   the token has "All repositories" access. To stop tracking one without
+   losing its history, set `enabled = 0` rather than deleting the row
+   (rediscovery won't turn it back on):
    ```
    npx wrangler d1 execute gh-traffic-tracker --remote --command \
-     "INSERT INTO tracked_repos (repo, enabled, added_at) VALUES ('owner/repo', 1, datetime('now'))"
+     "UPDATE tracked_repos SET enabled = 0 WHERE repo = 'owner/repo'"
    ```
-   Remove one by setting `enabled = 0` (keeps its history) or deleting the
-   row outright. Remember: `GITHUB_TOKEN` also needs access to whatever you
-   add here.
+   If the token is scoped to specific repos instead of "All repositories",
+   discovery only ever finds those — same effect, just token-scoped instead
+   of D1-scoped.
 
 8. **Deploy**
    ```
