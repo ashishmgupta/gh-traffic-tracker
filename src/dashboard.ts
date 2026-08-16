@@ -248,6 +248,14 @@ export const DASHBOARD_HTML = `<!doctype html>
     });
   }
 
+  // Every tracked repo lives under the same owner, so displaying it is
+  // redundant noise on every row/label/option — strip it for display only;
+  // the full "owner/repo" string is still what's used as the value/filter.
+  function shortRepo(repo) {
+    var slash = repo.indexOf("/");
+    return slash >= 0 ? repo.slice(slash + 1) : repo;
+  }
+
   // --- Minimal hand-rolled SVG line chart: two series (total/unique),
   // recessive gridlines, hover crosshair + tooltip. No charting library,
   // consistent with the rest of this project being dependency-free.
@@ -359,7 +367,8 @@ export const DASHBOARD_HTML = `<!doctype html>
       var val = r[valueKey];
       var w = val > 0 ? Math.max((val / maxVal) * plotW, minBarW) : 0;
       var yPos = i * (barH + gap);
-      var label = r.repo.length > 21 ? r.repo.slice(0, 20) + "\\u2026" : r.repo;
+      var repoName = shortRepo(r.repo);
+      var label = repoName.length > 21 ? repoName.slice(0, 20) + "\\u2026" : repoName;
       return (
         '<text x="' + (labelW - 8) + '" y="' + (yPos + barH / 2 + 6) + '" font-size="' + fontSize + '" fill="var(--text-secondary)" text-anchor="end">' +
         escapeHtml(label) + '</text>' +
@@ -409,7 +418,7 @@ export const DASHBOARD_HTML = `<!doctype html>
     el.innerHTML = rows.map(function (r, i) {
       var isActive = r.repo === currentRepo;
       return '<tr class="repo-row' + (isActive ? ' active' : '') + (r.enabled ? '' : ' disabled') + '" data-idx="' + i + '">' +
-        '<td>' + escapeHtml(r.repo) + '</td>' +
+        '<td>' + escapeHtml(shortRepo(r.repo)) + '</td>' +
         '<td><span class="status-pill ' + (r.enabled ? 'on' : 'off') + '">' + (r.enabled ? 'Tracking' : 'Disabled') + '</span></td>' +
         '<td>' + r.clone_count_sum + '</td>' +
         '<td>' + r.clone_uniques_sum + '</td>' +
@@ -496,9 +505,9 @@ export const DASHBOARD_HTML = `<!doctype html>
         select.innerHTML =
           '<option value="__all__"' + (data.repo === "__all__" ? " selected" : "") + '>All repos</option>' +
           data.repos.map(function (r) {
-            return '<option value="' + escapeHtml(r) + '"' + (r === data.repo ? " selected" : "") + '>' + escapeHtml(r) + '</option>';
+            return '<option value="' + escapeHtml(r) + '"' + (r === data.repo ? " selected" : "") + '>' + escapeHtml(shortRepo(r)) + '</option>';
           }).join("");
-        document.getElementById("detail-heading").textContent = "Showing: " + (data.repo === "__all__" ? "All repos (" + data.repos.length + ")" : data.repo);
+        document.getElementById("detail-heading").textContent = "Showing: " + (data.repo === "__all__" ? "All repos (" + data.repos.length + ")" : shortRepo(data.repo));
 
         renderTiles(data.totals);
         lastClonesRows = data.clones;
