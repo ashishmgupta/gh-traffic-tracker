@@ -38,34 +38,39 @@ async function ghGet<T>(env: Env, path: string): Promise<T> {
   return res.json();
 }
 
-/** Discovers every repo GITHUB_TOKEN has owner-level access to and adds any
- *  not already in tracked_repos (INSERT OR IGNORE — never touches enabled=0
- *  rows, so a repo you've deliberately turned off stays off even if
- *  rediscovered). Called at the start of every poll so newly created repos
- *  get picked up automatically, no manual SQL needed. */
-async function syncTrackedRepos(env: Env): Promise<void> {
+/** Discovers every repo GITHUB_TOKEN can see (owned, collaborator, or org
+ *  member — no affiliation filter, since a narrower one would silently miss
+ *  org-owned repos) and adds any not already in tracked_repos (INSERT OR
+ *  IGNORE — never touches enabled=0 rows, so a repo you've deliberately
+ *  turned off stays off even if rediscovered). Called at the start of every
+ *  poll so newly created repos get picked up automatically. Returns how
+ *  many repos were seen and how many were newly added, for visibility —
+ *  this used to fail silently, which made "why isn't X showing up" hard to
+ *  debug from outside. */
+async function syncTrackedRepos(env: Env): Promise<{ seen: number; added: number }> {
   const discovered: string[] = [];
   let page = 1;
   while (true) {
-    const repos = await ghGet<{ full_name: string }[]>(
-      env,
-      `/user/repos?affiliation=owner&per_page=100&page=${page}`
-    );
+    const repos = await ghGet<{ full_name: string }[]>(env, `/user/repos?per_page=100&page=${page}`);
     discovered.push(...repos.map((r) => r.full_name));
     if (repos.length < 100) break;
     page++;
   }
 
+  let added = 0;
   if (discovered.length > 0) {
     const now = new Date().toISOString();
-    await env.DB.batch(
+    const results = await env.DB.batch(
       discovered.map((repo) =>
         env.DB
           .prepare("INSERT OR IGNORE INTO tracked_repos (repo, enabled, added_at) VALUES (?, 1, ?)")
           .bind(repo, now)
       )
     );
+    added = results.filter((r) => r.meta.changes > 0).length;
   }
+
+  return { seen: discovered.length, added };
 }
 
 async function sendEmail(env: Env, subject: string, html: string): Promise<void> {
@@ -207,18 +212,23 @@ async function pollOneRepo(env: Env, repo: string): Promise<string> {
  *  enabled=0 rows stay excluded even if rediscovered, so turning a repo off
  *  sticks. One repo failing doesn't stop the others. */
 export async function pollGithubTraffic(env: Env): Promise<string> {
+  let discoveryNote: string;
   try {
-    await syncTrackedRepos(env);
+    const { seen, added } = await syncTrackedRepos(env);
+    discoveryNote = `discovery: saw ${seen} repo(s) via token, added ${added} new`;
   } catch (err) {
-    console.error("github-traffic: repo discovery failed, continuing with existing tracked_repos:", err);
+    // Surfaced, not swallowed — a discovery failure (bad token scope, wrong
+    // permission, rate limit) used to disappear into console.error only,
+    // with no way to tell from outside why the repo list wasn't growing.
+    discoveryNote = `discovery FAILED: ${String(err)}`;
   }
 
   const repos = await env.DB.prepare("SELECT repo FROM tracked_repos WHERE enabled = 1").all<TrackedRepo>();
   if (repos.results.length === 0) {
-    return "no tracked repos configured (see tracked_repos table)";
+    return `${discoveryNote} | no tracked repos configured`;
   }
 
-  const summaries: string[] = [];
+  const summaries: string[] = [discoveryNote];
   for (const { repo } of repos.results) {
     try {
       summaries.push(await pollOneRepo(env, repo));

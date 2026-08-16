@@ -96,6 +96,28 @@ export default {
       });
     }
 
+    // One row per tracked repo with its all-time totals — the comparison
+    // view, as opposed to /api/stats which is one repo's full detail.
+    if (url.pathname === "/api/repos-summary" && request.method === "GET") {
+      const authError = checkAuth(request, env);
+      if (authError) return authError;
+
+      const summary = await env.DB.prepare(
+        `SELECT
+           t.repo AS repo,
+           t.enabled AS enabled,
+           COALESCE((SELECT SUM(count) FROM gh_clone_history WHERE repo = t.repo), 0) AS clone_count_sum,
+           COALESCE((SELECT SUM(uniques) FROM gh_clone_history WHERE repo = t.repo), 0) AS clone_uniques_sum,
+           COALESCE((SELECT SUM(count) FROM gh_view_history WHERE repo = t.repo), 0) AS view_count_sum,
+           COALESCE((SELECT SUM(uniques) FROM gh_view_history WHERE repo = t.repo), 0) AS view_uniques_sum,
+           (SELECT MAX(date) FROM gh_clone_history WHERE repo = t.repo) AS latest_date
+         FROM tracked_repos t
+         ORDER BY clone_count_sum DESC, t.repo ASC`
+      ).all();
+
+      return Response.json({ repos: summary.results });
+    }
+
     // Manual on-demand poll, for testing — the real schedule is the daily
     // cron in wrangler.jsonc's triggers.crons.
     if (url.pathname === "/trigger" && request.method === "POST") {

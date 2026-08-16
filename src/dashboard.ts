@@ -103,6 +103,17 @@ export const DASHBOARD_HTML = `<!doctype html>
   tbody tr:last-child td { border-bottom: none; }
   .muted { color: var(--text-muted); }
 
+  tbody tr.repo-row { cursor: pointer; }
+  tbody tr.repo-row:hover { background: var(--surface-2); }
+  tbody tr.repo-row.active { background: rgba(53,194,53,0.08); }
+  tbody tr.repo-row.disabled { opacity: 0.5; }
+  .status-pill {
+    display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .status-pill.on { background: rgba(53,194,53,0.16); color: var(--accent); }
+  .status-pill.off { background: rgba(255,255,255,0.08); color: var(--text-muted); }
+
   .tables-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
   @media (max-width: 700px) { .tables-row { grid-template-columns: 1fr; } }
 
@@ -133,6 +144,15 @@ export const DASHBOARD_HTML = `<!doctype html>
 
     <div id="loading">Loading\\u2026</div>
     <div id="error-banner" style="display:none; color:#e66767;"></div>
+
+    <h2 class="section" style="margin-top:8px;">All tracked repos</h2>
+    <p class="subtitle" style="margin-top:-4px;">All-time totals, every repo side by side. Click a row to see its detail below.</p>
+    <div class="table-wrap" style="margin-bottom:28px;">
+      <table>
+        <thead><tr><th>Repo</th><th>Status</th><th>Clones</th><th>Unique cloners</th><th>Views</th><th>Unique visitors</th><th>Latest data</th></tr></thead>
+        <tbody id="repos-summary-rows"></tbody>
+      </table>
+    </div>
 
     <div id="content" style="display:none">
       <div class="tiles" id="tiles"></div>
@@ -306,6 +326,46 @@ export const DASHBOARD_HTML = `<!doctype html>
   }
 
   var currentRepo = null;
+  var lastReposSummary = [];
+
+  function renderReposSummary(rows) {
+    lastReposSummary = rows;
+    var el = document.getElementById("repos-summary-rows");
+    if (!rows.length) {
+      el.innerHTML = '<tr><td colspan="7" class="muted">No tracked repos yet \\u2014 click "Poll now" to discover them.</td></tr>';
+      return;
+    }
+    el.innerHTML = rows.map(function (r, i) {
+      var isActive = r.repo === currentRepo;
+      return '<tr class="repo-row' + (isActive ? ' active' : '') + (r.enabled ? '' : ' disabled') + '" data-idx="' + i + '">' +
+        '<td>' + escapeHtml(r.repo) + '</td>' +
+        '<td><span class="status-pill ' + (r.enabled ? 'on' : 'off') + '">' + (r.enabled ? 'Tracking' : 'Disabled') + '</span></td>' +
+        '<td>' + r.clone_count_sum + '</td>' +
+        '<td>' + r.clone_uniques_sum + '</td>' +
+        '<td>' + r.view_count_sum + '</td>' +
+        '<td>' + r.view_uniques_sum + '</td>' +
+        '<td class="muted">' + escapeHtml(r.latest_date || "\\u2014") + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function loadReposSummary() {
+    return fetch("/api/repos-summary", { headers: authHeaders() })
+      .then(function (res) { return res.ok ? res.json() : { repos: [] }; })
+      .then(function (data) { renderReposSummary(data.repos || []); })
+      .catch(function () { /* comparison table is a bonus view, never block the rest of the page on it */ });
+  }
+
+  document.getElementById("repos-summary-rows").addEventListener("click", function (e) {
+    var tr = e.target.closest("tr.repo-row");
+    if (!tr) return;
+    var idx = Number(tr.getAttribute("data-idx"));
+    var r = lastReposSummary[idx];
+    if (!r) return;
+    currentRepo = r.repo;
+    loadStats();
+    renderReposSummary(lastReposSummary);
+  });
 
   function loadStats() {
     document.getElementById("loading").style.display = "block";
@@ -353,7 +413,10 @@ export const DASHBOARD_HTML = `<!doctype html>
     loadStats();
   });
 
-  document.getElementById("refresh-btn").addEventListener("click", loadStats);
+  document.getElementById("refresh-btn").addEventListener("click", function () {
+    loadStats();
+    loadReposSummary();
+  });
 
   document.getElementById("trigger-btn").addEventListener("click", function () {
     var btn = document.getElementById("trigger-btn");
@@ -363,9 +426,12 @@ export const DASHBOARD_HTML = `<!doctype html>
     fetch("/trigger", { method: "POST", headers: authHeaders() })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        status.textContent = data.ok ? "Poll done" : "Poll failed: " + data.error;
+        // Shows the real summary (including the discovery result) rather
+        // than just "done" \\u2014 this is what used to be silently swallowed.
+        status.textContent = data.ok ? data.summary : "Poll failed: " + data.error;
         btn.disabled = false;
         loadStats();
+        loadReposSummary();
       })
       .catch(function (err) {
         status.textContent = "Poll failed: " + err.message;
@@ -388,6 +454,7 @@ export const DASHBOARD_HTML = `<!doctype html>
     gate.style.display = "none";
     app.style.display = "block";
     loadStats();
+    loadReposSummary();
   }
 
   document.getElementById("gate-submit").addEventListener("click", function () {
