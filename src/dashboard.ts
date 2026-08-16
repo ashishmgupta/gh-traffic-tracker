@@ -153,27 +153,8 @@ export const DASHBOARD_HTML = `<!doctype html>
     <div id="loading">Loading\\u2026</div>
     <div id="error-banner" style="display:none; color:#e66767;"></div>
 
-    <h2 class="section" style="margin-top:8px;">All tracked repos</h2>
-    <p class="subtitle" style="margin-top:-4px;">All-time totals, every repo side by side. Click a row to see its detail below.</p>
-    <div class="table-wrap" style="margin-bottom:28px;">
-      <table>
-        <thead><tr><th>Repo</th><th>Status</th><th>Clones</th><th>Unique cloners</th><th>Views</th><th>Unique visitors</th><th>Latest data</th></tr></thead>
-        <tbody id="repos-summary-rows"></tbody>
-      </table>
-    </div>
-
-    <div class="chart-card">
-      <h2>Clones by repo (top 12, all-time)</h2>
-      <div class="chart-wrap" id="clones-bar-wrap"></div>
-    </div>
-
-    <div class="chart-card" style="margin-bottom:28px;">
-      <h2>Views by repo (top 12, all-time)</h2>
-      <div class="chart-wrap" id="views-bar-wrap"></div>
-    </div>
-
     <div id="content" style="display:none">
-      <h2 class="section" id="detail-heading" style="margin-top:0;">Showing: All repos</h2>
+      <h2 class="section" id="detail-heading" style="margin-top:8px;">Showing: All repos</h2>
       <div class="tiles" id="tiles"></div>
 
       <div class="filter-toggle" id="date-filter">
@@ -184,7 +165,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       </div>
 
       <div class="chart-card">
-        <h2>Clones per day</h2>
+        <h2>Clones per day per app</h2>
         <div class="legend">
           <span><span class="swatch total"></span>Total</span>
           <span><span class="swatch unique"></span>Unique</span>
@@ -193,12 +174,31 @@ export const DASHBOARD_HTML = `<!doctype html>
       </div>
 
       <div class="chart-card">
-        <h2>Views per day</h2>
+        <h2>Views per day per app</h2>
         <div class="legend">
           <span><span class="swatch total"></span>Total</span>
           <span><span class="swatch unique"></span>Unique</span>
         </div>
         <div class="chart-wrap" id="views-chart-wrap"></div>
+      </div>
+
+      <div class="chart-card">
+        <h2>Clones by repo (top 12, all-time)</h2>
+        <div class="chart-wrap" id="clones-bar-wrap"></div>
+      </div>
+
+      <div class="chart-card" style="margin-bottom:28px;">
+        <h2>Views by repo (top 12, all-time)</h2>
+        <div class="chart-wrap" id="views-bar-wrap"></div>
+      </div>
+
+      <h2 class="section">All tracked repos</h2>
+      <p class="subtitle" style="margin-top:-4px;">All-time totals, every repo side by side. Click a row to see its detail above.</p>
+      <div class="table-wrap" style="margin-bottom:28px;">
+        <table>
+          <thead><tr><th>Repo</th><th>Status</th><th>Clones</th><th>Unique cloners</th><th>Views</th><th>Unique visitors</th><th>Latest data</th></tr></thead>
+          <tbody id="repos-summary-rows"></tbody>
+        </table>
       </div>
 
       <div class="tables-row">
