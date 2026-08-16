@@ -342,21 +342,29 @@ export const DASHBOARD_HTML = `<!doctype html>
       return;
     }
 
-    var W = 900, labelW = 190, rightPad = 50, barH = 20, gap = 8;
+    // These two charts now sit side by side (half the container width each
+    // — see the .tables-row wrapper in the markup), so the coordinate-space
+    // metrics below are sized up from the original full-width values to
+    // keep the on-screen text/bar thickness readable at that narrower
+    // rendered width (the SVG scales via width:100% off this viewBox).
+    var W = 900, labelW = 260, rightPad = 70, barH = 30, gap = 12, fontSize = 20;
     var plotW = W - labelW - rightPad;
     var H = top.length * (barH + gap);
     var maxVal = top[0][valueKey] || 1;
+    // A little more than 1px so a nonzero-but-small value stays visibly a
+    // bar, not a sliver that reads as zero next to a much larger max.
+    var minBarW = 4;
 
     var bars = top.map(function (r, i) {
       var val = r[valueKey];
-      var w = Math.max((val / maxVal) * plotW, 1);
+      var w = val > 0 ? Math.max((val / maxVal) * plotW, minBarW) : 0;
       var yPos = i * (barH + gap);
-      var label = r.repo.length > 28 ? r.repo.slice(0, 27) + "\\u2026" : r.repo;
+      var label = r.repo.length > 21 ? r.repo.slice(0, 20) + "\\u2026" : r.repo;
       return (
-        '<text x="' + (labelW - 8) + '" y="' + (yPos + barH / 2 + 4) + '" font-size="11" fill="var(--text-secondary)" text-anchor="end">' +
+        '<text x="' + (labelW - 8) + '" y="' + (yPos + barH / 2 + 6) + '" font-size="' + fontSize + '" fill="var(--text-secondary)" text-anchor="end">' +
         escapeHtml(label) + '</text>' +
         '<rect x="' + labelW + '" y="' + yPos + '" width="' + w + '" height="' + barH + '" rx="3" fill="' + color + '"/>' +
-        '<text x="' + (labelW + w + 6) + '" y="' + (yPos + barH / 2 + 4) + '" font-size="11" fill="var(--text-primary)">' + val + '</text>'
+        '<text x="' + (labelW + w + 8) + '" y="' + (yPos + barH / 2 + 6) + '" font-size="' + fontSize + '" fill="var(--text-primary)">' + val + '</text>'
       );
     }).join("");
 
