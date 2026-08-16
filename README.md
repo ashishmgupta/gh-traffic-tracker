@@ -100,6 +100,21 @@ or drop a repo.
 Runs automatically once a day thereafter (`triggers.crons` in
 `wrangler.jsonc`, default `0 6 * * *` UTC).
 
+## Dashboard
+
+Visit the Worker's root URL and unlock with `TRIGGER_SECRET` (same secret,
+same paste-once-per-session pattern as the `/trigger` endpoint). Shows, per
+tracked repo (switchable via the dropdown if you're tracking more than one):
+
+- All-time cumulative totals — clones and views, total + unique/day summed.
+  This is the actual point of storing history at all, since GitHub's own UI
+  never shows more than the trailing 14 days.
+- Daily trend charts for clones and views, hover for exact values per day.
+- The most recent top-referrers and top-paths snapshot.
+
+No separate setup — it's served from the same Worker, reading the same D1
+tables the daily poll writes to.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
