@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gh-traffic-tracker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-02",
+  // No top-level account_id: wrangler uses whichever account you're logged
+  // into (or prompts you to pick one, if you have several).
+  "vars": {
+    "GITHUB_REPO": "REPLACE_WITH_YOUR_GITHUB_OWNER/REPO",
+    "NOTIFY_EMAIL": "REPLACE_WITH_YOUR_EMAIL",
+    "NOTIFY_FROM_EMAIL": "onboarding@resend.dev"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gh-traffic-tracker",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "triggers": {
+    // Once a day — GitHub's traffic API is daily-granular anyway, polling
+    // more often than that just re-reads the same numbers.
+    "crons": ["0 6 * * *"]
+  }
+}

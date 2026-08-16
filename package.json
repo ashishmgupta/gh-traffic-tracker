@@ -1,0 +1,16 @@
+{
+  "name": "gh-traffic-tracker",
+  "version": "1.0.0",
+  "description": "Daily GitHub repo clone/view traffic history with email alerts on new clone activity.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "devDependencies": {
+    "wrangler": "^4.123.0"
+  }
+}
